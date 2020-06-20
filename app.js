@@ -5,6 +5,19 @@ var budgetController = ( function() {
         this.id = id,
         this.description = description,
         this.amount = amount
+        this.percentage = -1
+    }
+
+    Expenses.prototype.calPercentages = function(totalIncome) {
+        if (totalIncome > 0) {
+        this.percentage = Math.round((this.amount / totalIncome) * 100 )
+        } else  {
+            this.percentage = -1
+        }
+    }
+
+    Expenses.prototype.getPercentages = function() {
+        return this.percentage
     }
 
     var Income = function(id,description,amount) {
@@ -83,7 +96,18 @@ var budgetController = ( function() {
             }else {
                 data.percentage = -1
             }
-            
+        
+        },
+        calculatePercentage: function() {
+            data.allItems.exp.forEach(function(cur) {
+                cur.calPercentages(data.totals.inc)
+            })
+            },
+        getPercentage: function() {
+            var allPerc = data.allItems.exp.map(function(cur){
+                return cur.getPercentages()
+            })
+            return allPerc
         },
         getBudget: function() {
             return{
@@ -117,7 +141,31 @@ var UIController = ( function(){
         incomeLabel:'.budget__income--value',
         expenseLabel:'.budget__expenses--value',
         percentageLabel:'.budget__expenses--percentage',
-        container:'.container'
+        container:'.container',
+        expensesPerLab:'.item__percentage',
+        dateLabel:'.budget__title--month'
+    }
+
+    var formatNumber = function(num,type){
+        var numSplit,int,dec,sign
+        num = Math.abs(num)
+        num = num.toFixed(2)
+
+        numSplit = num.split('.')
+
+        int = numSplit[0]
+        if (int.length > 3){
+            int = int.substr(0,int.length-3) + "," + int.substr(int.length -3 ,int.length)
+        }
+        dec = numSplit[1]
+
+        return (type === 'exp' ?"-" :"+") + ' ' + int +'.'+ dec
+    }
+
+    var nodeList = function(list,callback) {
+        for (var i=0; i< list.length;i++){
+            callback(list[i],i)
+        }
     }
 
     return{
@@ -151,7 +199,7 @@ var UIController = ( function(){
             //Replace with HTML with actual data
             newHtml = html.replace('%id%',obj.id)
             newHtml = newHtml.replace('%Description%',obj.description)
-            newHtml = newHtml.replace('%Amount%',obj.amount)
+            newHtml = newHtml.replace('%Amount%',formatNumber(obj.amount,type))
             //Insert HTML into the DOM
             document.querySelector(element).insertAdjacentHTML('beforeend',newHtml)
         },
@@ -165,15 +213,51 @@ var UIController = ( function(){
             document.querySelector(DOMStrings.inputDescription).focus();
         },
         displayBudget: function(obj) {
-            document.querySelector(DOMStrings.budgetLabel).textContent = obj.budget
-            document.querySelector(DOMStrings.incomeLabel).textContent = obj.totalInc
-            document.querySelector(DOMStrings.expenseLabel).textContent = obj.totalExp
+            var typ
+            obj.budget > 0 ? typ ='inc' : 'exp'
+
+            document.querySelector(DOMStrings.budgetLabel).textContent = formatNumber(obj.budget,typ)
+            document.querySelector(DOMStrings.incomeLabel).textContent = formatNumber(obj.totalInc,'inc')
+            document.querySelector(DOMStrings.expenseLabel).textContent = formatNumber(obj.totalExp,'exp')
             
             if (obj.percentage > 0) {
                 document.querySelector(DOMStrings.percentageLabel).textContent = obj.percentage + "%"
             }else {
                 document.querySelector(DOMStrings.percentageLabel).textContent = "NA" 
             }
+        },
+        displayPercentages: function(percentages){
+            var fields = document.querySelectorAll(DOMStrings.expensesPerLab)
+
+           
+            nodeList(fields,function(current,index){
+                if(percentages[index] > 0) {
+                    current.textContent = percentages[index] + '%'
+                }else {
+                    current.textContent = "NA"
+                }
+            })
+        },
+        displayMonth: function() {
+            var now = new Date()
+            months = ['January','Febraury','March','April','May','June','July','August','September','October','November','December']
+            month = now.getMonth()
+            year = now.getFullYear()
+            document.querySelector(DOMStrings.dateLabel).textContent = months[month] + ' ' + year
+        },
+        changedType:  function() {
+            var fields = document.querySelectorAll(
+                DOMStrings.inputType + "," +
+                DOMStrings.inputDescription + "," +
+                DOMStrings.inputAmount
+            )
+
+            nodeList(fields,function(cur){
+                cur.classList.toggle('red-focus')
+            })
+
+            document.querySelector(DOMStrings.inputButton).classList.toggle('red')
+
         },
         getDOMStrings: function() {
             return DOMStrings
@@ -198,7 +282,7 @@ var controller = (function(budgetCtlr, UICtlr) {
             }}
         )
         document.querySelector(DOM.container).addEventListener('click',ctrlDelItem)
-    
+        document.querySelector(DOM.inputType).addEventListener('change', UICtlr.changedType)
     }
     
     var updateBudget = function() {
@@ -208,6 +292,15 @@ var controller = (function(budgetCtlr, UICtlr) {
         var budget = budgetCtlr.getBudget()
         //Display the Budget on the UI
         UICtlr.displayBudget(budget)
+    }
+
+    var updatePercentages = function() {
+        //Calculate %ages
+        budgetCtlr.calculatePercentage()
+        //Read from Budget controller
+        var percentages = budgetCtlr.getPercentage()
+        //Update UI to display
+        UICtlr.displayPercentages(percentages)
     }
     
     var ctrlAddItem = function() {
@@ -223,6 +316,8 @@ var controller = (function(budgetCtlr, UICtlr) {
             UICtlr.clearFields()
             //Calculate and update budget
             updateBudget()
+            //update %age
+            updatePercentages()
         }else {
             alert("Input Error: Please Check Input")
         }
@@ -244,12 +339,15 @@ var controller = (function(budgetCtlr, UICtlr) {
             UICtlr.deleteListItem(itemID)
             //Update and show the new Budget
             updateBudget()
+            //Update Percentage
+            updatePercentages()
         }
     }
 
     return {
         init: function() {
             console.log('Application Started')
+            UICtlr.displayMonth()
             UICtlr.displayBudget({budget: 0,
                 totalInc: 0,
                 totalExp: 0,
